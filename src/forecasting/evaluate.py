@@ -41,6 +41,12 @@ def dollar_weights(long: pd.DataFrame, cutoff_date: pd.Timestamp, lookback_days:
     return weights / total if total > 0 else weights
 
 
+def zero_fraction(wide: pd.DataFrame) -> pd.Series:
+    """Fraction of zero-sales days per series over the given window — the standard proxy
+    for demand intermittency (Croston/TSB territory starts around 0.6-0.7+)."""
+    return (wide == 0).mean(axis=1).rename("zero_frac")
+
+
 def summarize(scores: pd.Series, weights: pd.Series | None = None) -> dict:
     clean = scores.dropna()
     out = {"mean_rmsse": clean.mean(), "median_rmsse": clean.median(), "n_series": len(clean)}

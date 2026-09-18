@@ -58,3 +58,49 @@ def train(
 def predict(model: lgb.Booster, df: pd.DataFrame, feature_cols: list[str]) -> np.ndarray:
     preds = model.predict(df[feature_cols], num_iteration=model.best_iteration)
     return np.clip(preds, 0, None)
+
+
+def train_quantile(
+    train_df: pd.DataFrame,
+    valid_df: pd.DataFrame,
+    feature_cols: list[str],
+    categorical_cols: list[str],
+    quantile: float,
+    target_col: str = "target_28d",
+    num_boost_round: int = 2000,
+    early_stopping_rounds: int = 50,
+) -> lgb.Booster:
+    """Same global-model setup as `train`, but for pinball-loss quantile regression against
+    a cumulative target (e.g. total demand over the next 28 days) instead of a point mean.
+    """
+    params = {
+        **DEFAULT_PARAMS,
+        "objective": "quantile",
+        "alpha": quantile,
+        "metric": "quantile",
+    }
+    train_set = lgb.Dataset(
+        train_df[feature_cols],
+        label=train_df[target_col],
+        categorical_feature=categorical_cols,
+        free_raw_data=False,
+    )
+    valid_set = lgb.Dataset(
+        valid_df[feature_cols],
+        label=valid_df[target_col],
+        categorical_feature=categorical_cols,
+        reference=train_set,
+        free_raw_data=False,
+    )
+    model = lgb.train(
+        params,
+        train_set,
+        num_boost_round=num_boost_round,
+        valid_sets=[train_set, valid_set],
+        valid_names=["train", "valid"],
+        callbacks=[
+            lgb.early_stopping(early_stopping_rounds),
+            lgb.log_evaluation(period=50),
+        ],
+    )
+    return model

@@ -76,5 +76,27 @@ def build_feature_table(long: pd.DataFrame) -> pd.DataFrame:
 
 
 def feature_columns(df: pd.DataFrame) -> list[str]:
-    exclude = {"id", "d", "date", "sales", "wm_yr_wk"}
+    exclude = {"id", "d", "date", "sales", "wm_yr_wk", "target_28d"}
     return [c for c in df.columns if c not in exclude]
+
+
+def forward_sum_target(wide_sales: pd.DataFrame, horizon: int = HORIZON) -> pd.DataFrame:
+    """For each (series, date=t), the total demand over [t, t+horizon-1] — the cumulative
+    demand a reorder decision made around `t` actually needs to cover. NaN past the point
+    where the forward window runs off the end of the data.
+    """
+    cs = wide_sales.to_numpy(dtype="float64").cumsum(axis=1)
+    cs_padded = np.concatenate([np.zeros((cs.shape[0], 1)), cs], axis=1)
+    n = wide_sales.shape[1]
+    forward = np.full((wide_sales.shape[0], n), np.nan)
+    for t in range(n - horizon + 1):
+        forward[:, t] = cs_padded[:, t + horizon] - cs_padded[:, t]
+    return pd.DataFrame(forward, index=wide_sales.index, columns=wide_sales.columns)
+
+
+def add_target_28d(df: pd.DataFrame, wide_sales: pd.DataFrame, horizon: int = HORIZON) -> pd.DataFrame:
+    """Merge the forward-sum target (long format) into a feature table on (id, date)."""
+    target_wide = forward_sum_target(wide_sales, horizon)
+    target_long = target_wide.stack(future_stack=True).rename("target_28d").reset_index()
+    target_long.columns = ["id", "date", "target_28d"]
+    return df.merge(target_long, on=["id", "date"], how="left")

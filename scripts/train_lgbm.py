@@ -55,11 +55,22 @@ def main() -> None:
     forecast_wide = forecast_wide.reindex(index=actual_wide.index, columns=actual_wide.columns)
     forecast_wide = forecast_wide.fillna(0.0)
 
+    forecasts_dir = PROCESSED_DIR / "forecasts"
+    forecasts_dir.mkdir(parents=True, exist_ok=True)
+    forecast_wide.to_parquet(forecasts_dir / "lgbm_global.parquet")
+
     weights = dollar_weights(long, cutoff_date=test_cutoff, lookback_days=HORIZON_DAYS)
     scores = rmsse(train_wide, actual_wide, forecast_wide)
     summary = summarize(scores, weights)
     print(f"\nlgbm_global          mean_rmsse={summary['mean_rmsse']:.4f}  "
           f"weighted_rmsse={summary.get('weighted_rmsse', float('nan')):.4f}")
+
+    per_series_path = PROCESSED_DIR / "per_series_rmsse.parquet"
+    if per_series_path.exists():
+        per_series = pd.read_parquet(per_series_path)
+        per_series["lgbm_global"] = scores.reindex(per_series.index)
+        per_series.to_parquet(per_series_path)
+        print(f"Updated per-series scores at {per_series_path}")
 
     results_path = PROCESSED_DIR / "baseline_results.csv"
     results = pd.read_csv(results_path) if results_path.exists() else pd.DataFrame()
